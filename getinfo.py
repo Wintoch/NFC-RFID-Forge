@@ -30,4 +30,22 @@ def getBasicInfo(onlySAK):
             ser.read(6)
 
 def getUsedTechnologyInfo():
-    sak = getBasicInfo(True)
+    sak, uid = getBasicInfo(True)
+    match sak:
+        case 0x08:
+            readMifare1k(uid)
+        case _:
+            print("circuit not supported yet")
+            
+def readMifare1k(uid):
+    fabricKey = b'\xFF\xFF\xFF\xFF\xFF\xFF'
+    for x in range(64):
+        middle = bytearray(b'\xD4\x40\x01\x60')
+        middle.append(x)
+        middle.extend(fabricKey)
+        middle.extend(uid)
+        
+        controlSum = sum(middle)
+        dcs = (256-(controlSum % 256)) % 256
+        
+        frame = b'\x00\x00\xFF\x0F\xF1' + middle + bytes([dcs]) + '\x00'
