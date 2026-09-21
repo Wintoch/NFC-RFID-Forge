@@ -48,4 +48,26 @@ def readMifare1k(uid):
         controlSum = sum(middle)
         dcs = (256-(controlSum % 256)) % 256
         
-        frame = b'\x00\x00\xFF\x0F\xF1' + middle + bytes([dcs]) + '\x00'
+        frame = b'\x00\x00\xFF\x0F\xF1' + middle + bytes([dcs]) + b'\x00'
+        ser.write(frame)
+        ser.read(6)
+        
+        checkStatus = ser.read(20)
+        authorizationStatus = checkStatus[7]
+                
+        if (authorizationStatus == 0x14):
+            continue
+        elif (authorizationStatus == 0x00):
+            middleTemp = bytearray(b'\xD4\x40\x01\x30')
+            middleTemp.append(x)
+            
+            controlSumTemp = sum(middleTemp)
+            dcsTemp = (256-(controlSumTemp % 256)) % 256
+            
+            frame = b'\x00\x00\xFF\x05\xFB' + middleTemp + bytes([dcsTemp]) + b'\x00'
+            ser.write(frame)
+            ser.read(6)
+            print(ser.read(30).hex(' ').upper())
+            
+        
+getUsedTechnologyInfo()
