@@ -1,7 +1,7 @@
 import serial
 import time
 
-ser = serial.Serial('COM3', 115200, timeout=1)
+ser = serial.Serial('COM3', 115200, timeout=0.05)
 
 #waking up the module
 ser.write(b'\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00')
@@ -37,37 +37,40 @@ def getUsedTechnologyInfo():
         case _:
             print("circuit not supported yet")
             
+def writeCorrectFrame(middleFromMessage):
+    controlSum = sum(middleFromMessage)
+    dcs = (256-(controlSum % 256)) % 256
+    controlLen = len(middleFromMessage)
+    lcs = (256-(controlLen % 256)) % 256
+    frame = b'\x00\x00\xFF'+ bytes([controlLen]) + bytes([lcs]) + middleFromMessage + bytes([dcs]) + b'\x00'
+    ser.write(frame)
+    ser.read(6)
+            
 def readMifare1k(uid):
     fabricKey = b'\xFF\xFF\xFF\xFF\xFF\xFF'
-    for x in range(64):
+    for x in range(0,64,4):
         middle = bytearray(b'\xD4\x40\x01\x60')
         middle.append(x)
         middle.extend(fabricKey)
         middle.extend(uid)
         
-        controlSum = sum(middle)
-        dcs = (256-(controlSum % 256)) % 256
-        
-        frame = b'\x00\x00\xFF\x0F\xF1' + middle + bytes([dcs]) + b'\x00'
-        ser.write(frame)
-        ser.read(6)
+        writeCorrectFrame(middle)
         
         checkStatus = ser.read(20)
         authorizationStatus = checkStatus[7]
                 
         if (authorizationStatus == 0x14):
+            print('Status 0x14')
+            getBasicInfo(True)
             continue
         elif (authorizationStatus == 0x00):
-            middleTemp = bytearray(b'\xD4\x40\x01\x30')
-            middleTemp.append(x)
-            
-            controlSumTemp = sum(middleTemp)
-            dcsTemp = (256-(controlSumTemp % 256)) % 256
-            
-            frame = b'\x00\x00\xFF\x05\xFB' + middleTemp + bytes([dcsTemp]) + b'\x00'
-            ser.write(frame)
-            ser.read(6)
-            print(ser.read(30).hex(' ').upper())
+            for i in range(4):    
+                middleAccept = bytearray(b'\xD4\x40\x01\x30')
+                middleAccept.append(x + i)
+                writeCorrectFrame(middleAccept)
+                
+                blockData = ser.read(30)[8:24].hex(' ').upper()
+                print('Block number: ', x + i, '    ', blockData )
             
         
 getUsedTechnologyInfo()
