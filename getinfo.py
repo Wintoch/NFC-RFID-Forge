@@ -1,7 +1,7 @@
 import serial
 import time
 
-ser = serial.Serial('COM3', 115200, timeout=0.05)
+ser = serial.Serial('COM4', 115200, timeout=0.5)
 
 #waking up the module
 ser.write(b'\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00')
@@ -34,6 +34,10 @@ def getUsedTechnologyInfo():
     match sak:
         case 0x08:
             readMifare1k(uid)
+        case 0x20:
+            readSmartCard()
+        case 0x28:
+            readSmartCard()
         case _:
             print("circuit not supported yet")
             
@@ -59,11 +63,7 @@ def readMifare1k(uid):
         checkStatus = ser.read(20)
         authorizationStatus = checkStatus[7]
                 
-        if (authorizationStatus == 0x14):
-            print('Status 0x14')
-            getBasicInfo(True)
-            continue
-        elif (authorizationStatus == 0x00):
+        if (authorizationStatus == 0x00):
             for i in range(4):    
                 middleAccept = bytearray(b'\xD4\x40\x01\x30')
                 middleAccept.append(x + i)
@@ -71,6 +71,25 @@ def readMifare1k(uid):
                 
                 blockData = ser.read(30)[8:24].hex(' ').upper()
                 print('Block number: ', x + i, '    ', blockData )
-            
-        
+        elif (authorizationStatus == 0x14):
+                    print('Status 0x14')
+                    getBasicInfo(True)
+
+def readSmartCard():
+    header = bytearray(b'\xD4\x40\x01\x00\xA4\x04\x00\x0E' + b'2PAY.SYS.DDF01' + b'\x00')
+    writeCorrectFrame(header)
+    response = ser.read(255)
+    start = response.find(b'\x4F')
+    length = response[start+1]
+    start+=2
+    end = start+length
+    address = response[start:end]
+    
+    basicInfo = bytearray(b'\xD4\x40\x01\x00\xA4\x04\x00'+ bytes([length]) + address + b'\x00')
+    writeCorrectFrame(basicInfo)
+    response = ser.read(255)
+    
+    print(response.hex(' ').upper())
+    print(response[8:-2].decode('ascii', errors='ignore'))
+
 getUsedTechnologyInfo()
