@@ -1,7 +1,7 @@
 import serial
 import time
 
-ser = serial.Serial('COM4', 115200, timeout=0.5)
+ser = serial.Serial('COM4', 115200, timeout=0.2)
 
 #waking up the module
 ser.write(b'\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00')
@@ -75,21 +75,54 @@ def readMifare1k(uid):
                     print('Status 0x14')
                     getBasicInfo(True)
 
-def readSmartCard():
-    header = bytearray(b'\xD4\x40\x01\x00\xA4\x04\x00\x0E' + b'2PAY.SYS.DDF01' + b'\x00')
-    writeCorrectFrame(header)
+# Sends an APDU frame to the card, locates the target EMV tag (TLV format) in the response,
+# and returns the extracted data payload along with its length.
+def cutSmartResponse(msgToSend, toFind,):
+    writeCorrectFrame(msgToSend)
     response = ser.read(255)
-    start = response.find(b'\x4F')
+    start = response.find(toFind) + (len(toFind) - 1)
     length = response[start+1]
     start+=2
     end = start+length
-    address = response[start:end]
+    value = response[start:end]
+    return value, length
+
+
+def readSmartCard():
+    header = bytearray(b'\xD4\x40\x01\x00\xA4\x04\x00\x0E' + b'2PAY.SYS.DDF01' + b'\x00')
+    address, length = cutSmartResponse(header, b'\x4F')
     
     basicInfo = bytearray(b'\xD4\x40\x01\x00\xA4\x04\x00'+ bytes([length]) + address + b'\x00')
-    writeCorrectFrame(basicInfo)
-    response = ser.read(255)
+    cardName = cutSmartResponse(basicInfo, b'\x50')
+    print(cardName[0].decode('ascii'))
     
-    print(response.hex(' ').upper())
-    print(response[8:-2].decode('ascii', errors='ignore'))
+    
+    # cardNumber = bytearray(b'\xD4\x40\x01\x80\xA8\x00\x00\x23\x83\x21' + b'\x26\x00\x00\x00' + b'\x00' * 29 + b'\x00')
+    for x in range(1,6):
+        for y in range(1,6):
+            cardNumberMSG = bytearray(b'\xD4\x40\x01' + b'\x00\xB2' + bytes([y]) + bytes([(x << 3) | 4]) + b'\x00')
+            writeCorrectFrame(cardNumberMSG)
+            response = ser.read(255)
+            toSearch = (b'\x5A\x08', b'\x57\x13')
+            for tag in toSearch:
+                if(tag in response):
+                    where = response.find(tag)
+                    cardNumber = response[where+2:where+10]
+                    print("Card number: " , cardNumber.hex(' ').upper())
+                    break
+            tag = b'\x5F\x24'
+            if(tag in response):
+                where = response.find(tag)
+                cardExpiry = response[where+3:where+5]
+                print("Card expiry date(yy/mm): " , cardExpiry.hex('/').upper())
+                break
+    
+    #reading the usage count
+    usageCountMSG = bytearray(b'\xD4\x40\x01' + b'\x80\xCA' + b'\x9F\x36' + b'\x00')
+    writeCorrectFrame(usageCountMSG)
+    print(ser.read(255).hex(' ').upper())
+    usageCount = cutSmartResponse(usageCountMSG, b'\x9F\x36')
+    print("This card was used this many times:" , int.from_bytes(usageCount[0], 'big'))
+    
 
 getUsedTechnologyInfo()
